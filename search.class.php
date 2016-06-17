@@ -3,7 +3,7 @@
 # Things That need to be customized
     $this->look_in
     $this->table
-    $score_var (the db fields for ranking results 
+    $this->rank_by (the db fields for ranking results)
 */
 class search{
     var $keywords_array;
@@ -44,9 +44,11 @@ function __construct($keywords, $table, $look_in, $rank_by){
     $this->table = $table;      // The SQL table to search in
     $this->look_in = $look_in;  //an array of database field names
     $this->rank_by = $rank_by;
-    $this->settings['greedy'] = false; // Set to true to match any keywords
+    $this->settings['greedy'] = true; // Set to false to only show results that match all keywords
     $this->settings['id_field'] = 'id'; // Set to the uneque id field of table 
-    $this->settings['split_terms_run_count'] = 0;
+    $this->settings['common_words'] = array('the','and','a','it','an','that','this', 'is','to','or','if','as');
+    $this->settings['rating_field'] = null;
+    
    }
 
 function search_split_terms(){
@@ -70,21 +72,9 @@ function search_split_terms(){
         $this->keywords_array[$key] = $keyword;
     }
     
-    testit('strpos',strpos($this->keywords,'"'));
-
-    /*
-     * This is insane: for some unknown reason this some runs twice instead of once and breaks everything
-    if(strpos($this->keywords,'"') == false){
-        $this->settings['split_terms_run_count'] ++;
-        echo testit('$this->keywords before adding quoted phrase',$this->keywords);
-        $keyphrase = $this->keywords;
-        echo testit('$this->keywords while adding quoted phrase',$keyphrase);
-        # Add quoted phrase as term
-        $this->keywords_array[] = "\"$keyphrase\"";
-        echo testit('$this->keywords after adding quoted phrase',$this->keywords);
-    }
-    testit('split_terms_run_count',$this->settings['split_terms_run_count']);
-    */
+    # convert the {COMMA} and {WHITESPACE} back in $this->keywords
+    $this->keywords = preg_replace_callback("~\{WHITESPACE-([0-9]+)\}~", function ($stuff) { return chr($stuff[1]);}, $this->keywords);
+    $this->keywords = preg_replace("/\{COMMA\}/", ",", $this->keywords);    
 }
 
 function search_transform_term($keyword){
@@ -97,8 +87,7 @@ function search_transform_term($keyword){
 
 function strip_common_words(){
 
-    $common_words = array('the','and','a','it','an','that','this', 'is','to','or','if');
-    
+    $common_words = $this->settings['common_words'];
     //echo testit('common_words', $common_words);
     //echo testit('keywords', $this->keywords_array);
     foreach($this->keywords_array as $key => $value){
@@ -129,7 +118,64 @@ function set_required_conditions($field, $value){
     testit('$rc in set rc',$this->required_conditions);
 }
 
+function rank_results($results){
+    
+    if(count($this->keywords_array) >  1){
+        $this->keywords_array[] = $this->keywords;
+    }
+    
+    $max_score = 0;
+    $max_rating = 0;
+    
+    foreach($results as $row){
+        
+        echo testit('$row[score_var]',$row['score_var']);
+        $row[score] = 0;
+        $row['score_var'] = '';
+         
+        # this is the contence of $ranks_by fields put together to be sent to the scorring machine
+        foreach($this->rank_by as $field){
+            $row['score_var'] .= "$row[$field] ";
+        }        
+        
+        echo testit('$row[score_var]',$row['score_var']);
+        
+        # for each word in keywords check how may times it occurs in score_var and add that number to $row[score]
+        foreach($this->keywords_array as $keyword){
+            $row['score'] += preg_match_all("~$keyword~i", $row['score_var'], $null);
+        }
+        
 
+        if($this->settings['rating_field']){
+            if($row['score'] > $max_score){
+                $max_score = $row['score'];
+            }
+            if($row[$this->settings['rating_field']] > $max_rating){
+                $max_rating = $row[$this->settings['rating_field']];
+            }
+        }
+        
+        //echo testit('$keyword',$keyword);
+        //echo testit('$row',$row);
+        $rows[] = $row;
+    }
+    
+    /*
+    # Scale rank and rating to each other if there is rating_field
+    # TODO This should be fully functional but is no tested yet so commented out
+    if($this->settings['rating_field'] && $row[$this->settings['rating_field']]){
+        
+        foreach($rows as $row){
+            $row['score'] = $row['score'] / $max_score;
+            $row[$this->settings['rating_field']] = $row[$this->settings['rating_field']] / $max_rating;
+            $row['score'] = $row['score'] / $max_score + $row[$this->settings['rating_field']];
+            
+        }
+    }
+    */
+    echo testit('$rows',$rows);
+    return $rows;
+}
 
 
 function search_perform(){
@@ -218,45 +264,22 @@ function search_perform(){
         }
     }
 
-    $sql = "SELECT ".join(',',$this->look_in)." FROM ".$this->table." WHERE $parts";
+    //$sql = "SELECT ".join(',',$this->look_in)." FROM ".$this->table." WHERE $parts";
+    $sql = "SELECT * FROM ".$this->table." WHERE $parts";
     //echo testit("search sql",$sql);
     
     global $DB;
     $result = $DB->select("sql:$sql");
     //echo testit('result',$result);
     
-    $rows = array();
+
     /*
     $result = mysql_query($sql);
     if (!$result) {die('Invalid query: ' . mysql_error());} 
     while($row = mysql_fetch_array($result, MYSQL_ASSOC)){
     */
 
-    foreach($result as $row){
-        
-        $row[score] = 0;
-         $score_var = '';
-         
-        # this is the contence of $ranks_by fields put together to be sent to the scorring machine
-        foreach($this->rank_by as $field){
-            $score_var .= "$row[$field] ";
-            $row['score_var'] .= $score_var;
-        }        
-        
-        # for each word in keywords check how may times it occurs in score_var and add that number to $row[score]
-        # TODO
-        # This is a place where waiting for multi word matches could be added 
-        
-        foreach($this->keywords_array as $keyword){
-            $row['score'] += preg_match_all("~$keyword~i", $score_var, $null);
-        }
-
-        //echo testit('$keyword',$keyword);
-        //echo testit('$$score_var',$score_var);
-        //echo testit('$row',$row);
-        $rows[] = $row;
-    }
-
+    $rows = $this->rank_results($result);
     
     # if there is a custom sort by colum set, sort by that.
     if($this->sortby){
@@ -269,6 +292,7 @@ function search_perform(){
     $this->results_count = count($this->results);
     return $rows;
 }
+
 
 
 function search_rx_escape_terms($keywords_db){
@@ -394,14 +418,22 @@ function show_search_result_block($row){
 function get_results_html(){
     $this->search_perform($this->keywords);
     
-    $keyword_list = $this->search_pretty_terms($this->search_html_escape_terms($this->search_split_terms($this->keywords)));
+    # search_pretty_terms() formats the keywords as "first, second and third" for search term "first second third" it has issues however
+    //$keyword_list = $this->search_pretty_terms($this->search_html_escape_terms($this->search_split_terms($this->keywords)));
+    
+    $keyword_list =  htmlentities($this->keywords);
     if($keyword_list){ $for_keywords="for <b>$keyword_list</b> ";}
     
     if(count($this->results)){
         $paginate = new paginate($this->results,20);
         $results_paged = $paginate->page_data();
-     
-        $this->results_message = count($this->results) . " items $for_keywords(".$paginate->x_of_x_pages().") " .$paginate->paging_links();
+        
+        if(count($keywords_html) == 1){
+            $items = 'item';
+        }else{
+            $items = 'items';
+        }
+        $this->results_message = count($this->results) . " $items $for_keywords(".$paginate->x_of_x_pages().") " .$paginate->paging_links();
     
         foreach($results_paged as $key => $value){
             
