@@ -46,16 +46,16 @@ function __construct($keywords, $table, $look_in, $rank_by){
     $this->rank_by = $rank_by;
     $this->settings['greedy'] = false; // Set to true to match any keywords
     $this->settings['id_field'] = 'id'; // Set to the uneque id field of table 
+    $this->settings['split_terms_run_count'] = 0;
    }
 
 function search_split_terms(){
+    
     # Replace * with %
     $this->keywords = str_replace('*', '%' , $this->keywords);
     
-    
     # Send anything between quots to search_transform_term() which replaces commas and whitespace with {PLACEHOLDERS}
     $this->keywords = preg_replace_callback("~\"(.*?)\"~", "search::search_transform_term", $this->keywords);
-    
     
     # Split $this->keywords by spaces and commas and Populate $this->keywords_array with parts
     $this->keywords_array = preg_split("/\s+|,/", $this->keywords);
@@ -69,6 +69,22 @@ function search_split_terms(){
 
         $this->keywords_array[$key] = $keyword;
     }
+    
+    testit('strpos',strpos($this->keywords,'"'));
+
+    /*
+     * This is insane: for some unknown reason this some runs twice instead of once and breaks everything
+    if(strpos($this->keywords,'"') == false){
+        $this->settings['split_terms_run_count'] ++;
+        echo testit('$this->keywords before adding quoted phrase',$this->keywords);
+        $keyphrase = $this->keywords;
+        echo testit('$this->keywords while adding quoted phrase',$keyphrase);
+        # Add quoted phrase as term
+        $this->keywords_array[] = "\"$keyphrase\"";
+        echo testit('$this->keywords after adding quoted phrase',$this->keywords);
+    }
+    testit('split_terms_run_count',$this->settings['split_terms_run_count']);
+    */
 }
 
 function search_transform_term($keyword){
@@ -77,6 +93,22 @@ function search_transform_term($keyword){
     
     $keyword = preg_replace("/,/", "{COMMA}", $keyword[1]);
     return $keyword;
+}
+
+function strip_common_words(){
+
+    $common_words = array('the','and','a','it','an','that','this', 'is','to','or','if');
+    
+    //echo testit('common_words', $common_words);
+    //echo testit('keywords', $this->keywords_array);
+    foreach($this->keywords_array as $key => $value){
+        if(in_array($value, $common_words)){
+            //echo testit('common words match', $value);
+            unset($this->keywords_array[$key]);
+            #get rid of it
+        }
+    }
+    //echo testit('stripped keywords', $this->keywords_array);
 }
 
 function search_escape_rlike($keyword){
@@ -103,6 +135,7 @@ function set_required_conditions($field, $value){
 function search_perform(){
 
     $this->search_split_terms();
+    $this->strip_common_words();
     $keywords_db = $this->search_db_escape_terms();
     $keywords_rx = $this->search_rx_escape_terms($keywords_db);
 
