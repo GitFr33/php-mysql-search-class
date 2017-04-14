@@ -6,7 +6,7 @@ Supports quoted phrase matching and wild-card search characters as well as strip
 
 Uses a customizable version of the short stopwords list from http://www.ranks.nl/stopwords
 
-## How to use it
+## How To Use It
 
     #Create the search object.
     $search = new search($_GET['keywords'],mysql_table, columns_to_seach, columns_to_rank_by);
@@ -23,3 +23,8 @@ This class currently depends on the photosynthesis https://github.com/Photosynth
 
 ## To Do
 Figgure out a good lightweight method to match plural and singular versions of words.
+
+
+## Implementations in the Wild
+http://www.islandlight.ca
+https://www.sunship.com
