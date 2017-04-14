@@ -1,6 +1,6 @@
 # PHP + MySql website site search class
 
-A simple configurable site search class. Sarch a MySql table of pages, images, or other site content and return matching results sorted by relevance, rating and or other criteria.
+A simple configurable class to sarch a MySql table of pages, images, or other site content and return matching results sorted by relevance, rating and or other criteria.
 
 Supports quoted phrase matching and wild-card search characters as well as stripping common filler words and optional custom sorting and/or required conditions.
 
