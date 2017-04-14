@@ -20,24 +20,24 @@ class search{
     var $sort_order;
     var $rank_by;
     var $settings;
-/* READ ME 
+/* READ ME
 
 What the Heck is going on??
-search_split_terms() 
+search_split_terms()
     Replace * with %
     If $keyword is quoted send to search_transform_term() which replaces commas and whitespac with {PLACEHOLDERS}
     Split $this->keywords by spaces and commas and Populate $this->keywords_array with parts
 search_db_escape_terms();
-    creates $keywords_db var replacing spaces with [[:>:]] uses Addsolashes as well as an inscrutable regex escaper 
+    creates $keywords_db var replacing spaces with [[:>:]] uses Addsolashes as well as an inscrutable regex escaper
 search_rx_escape_terms(){
     takes the output from search_db_escape_terms() and does this to it. ?
     $out = array();
     foreach($this->keywords_array as $keyword){
         $out[] = '\b'.preg_quote($keyword, '/').'\b';
     }
- 
+
 */
-            
+
 function __construct($keywords, $table, $look_in, $rank_by){
     $this->keywords = trim($keywords);
     $this->keywords_array = $keywords;
@@ -45,59 +45,51 @@ function __construct($keywords, $table, $look_in, $rank_by){
     $this->look_in = $look_in;  //an array of database field names
     $this->rank_by = $rank_by;
     $this->settings['greedy'] = true; // Set to false to only show results that match all keywords
-    $this->settings['id_field'] = 'id'; // Set to the uneque id field of table 
-    $this->settings['common_words'] = array('the','and','a','it','an','that','this', 'is','to','or','if','as');
-    $this->settings['rating_field'] = null;
-    
+    $this->settings['id_field'] = 'id'; // Set to the uneque id field of table
+    $this->settings['common_words'] = array('a','an','are','as','at','be','by','com','for','from','how','in','is','it','of','on','or','that','the','this','to','was','what','when','who','with','the');
+    $this->settings['rating_field'] = NULL;
+
    }
 
 function search_split_terms(){
-    
+
     # Replace * with %
     $this->keywords = str_replace('*', '%' , $this->keywords);
-    
+
     # Send anything between quots to search_transform_term() which replaces commas and whitespace with {PLACEHOLDERS}
     $this->keywords = preg_replace_callback("~\"(.*?)\"~", "search::search_transform_term", $this->keywords);
-    
+
     # Split $this->keywords by spaces and commas and Populate $this->keywords_array with parts
     $this->keywords_array = preg_split("/\s+|,/", $this->keywords);
-    
-    
+
     # convert the {COMMA} and {WHITESPACE} back within each row of $this->keywords_array
     foreach($this->keywords_array as $key => $keyword){
         $keyword = preg_replace_callback("~\{WHITESPACE-([0-9]+)\}~", function ($stuff) { return chr($stuff[1]);}, $keyword);
-        
         $keyword = preg_replace("/\{COMMA\}/", ",", $keyword);
-
         $this->keywords_array[$key] = $keyword;
     }
-    
+
     # convert the {COMMA} and {WHITESPACE} back in $this->keywords
     $this->keywords = preg_replace_callback("~\{WHITESPACE-([0-9]+)\}~", function ($stuff) { return chr($stuff[1]);}, $this->keywords);
-    $this->keywords = preg_replace("/\{COMMA\}/", ",", $this->keywords);    
+    $this->keywords = preg_replace("/\{COMMA\}/", ",", $this->keywords);
 }
 
 function search_transform_term($keyword){
-
+  // replace commas and whitespace with {PLACEHOLDERS}
     $keyword[1] = preg_replace_callback("~(\s)~", function($match) { return '{WHITESPACE-'.ord($match[1]).'}';}, $keyword[1]);
-    
+
     $keyword = preg_replace("/,/", "{COMMA}", $keyword[1]);
     return $keyword;
 }
 
 function strip_common_words(){
-
     $common_words = $this->settings['common_words'];
-    //echo testit('common_words', $common_words);
-    //echo testit('keywords', $this->keywords_array);
     foreach($this->keywords_array as $key => $value){
         if(in_array($value, $common_words)){
-            //echo testit('common words match', $value);
+            //testit('common words match', $value);
             unset($this->keywords_array[$key]);
-            #get rid of it
         }
     }
-    //echo testit('stripped keywords', $this->keywords_array);
 }
 
 function search_escape_rlike($keyword){
@@ -113,38 +105,33 @@ function search_db_escape_terms(){
 }
 
 function set_required_conditions($field, $value){
-            
     $this->required_conditions[$field] = $value;
-    testit('$rc in set rc',$this->required_conditions);
+    testit('$rc in set_required_conditions',$this->required_conditions);
 }
 
 function rank_results($results){
-    
+
     if(count($this->keywords_array) >  1){
-        $this->keywords_array[] = $this->keywords;
+        array_unshift($this->keywords_array, $this->keywords);
     }
-    
+
     $max_score = 0;
     $max_rating = 0;
-    
+
     foreach($results as $row){
-        
-        echo testit('$row[score_var]',$row['score_var']);
-        $row[score] = 0;
+        $row['score'] = 0;
         $row['score_var'] = '';
-         
+
         # this is the contence of $ranks_by fields put together to be sent to the scorring machine
         foreach($this->rank_by as $field){
             $row['score_var'] .= "$row[$field] ";
-        }        
-        
-        echo testit('$row[score_var]',$row['score_var']);
-        
-        # for each word in keywords check how may times it occurs in score_var and add that number to $row[score]
+        }
+
+        # for each word in keywords check how may times it occurs in score_var and incriment $row[score]
         foreach($this->keywords_array as $keyword){
             $row['score'] += preg_match_all("~$keyword~i", $row['score_var'], $null);
         }
-        
+
 
         if($this->settings['rating_field']){
             if($row['score'] > $max_score){
@@ -154,27 +141,22 @@ function rank_results($results){
                 $max_rating = $row[$this->settings['rating_field']];
             }
         }
-        
-        //echo testit('$keyword',$keyword);
-        //echo testit('$row',$row);
+
+        //testit('$keyword',$keyword);
+        // testit('$row',$row);
         $rows[] = $row;
     }
-    
-    /*
-    # Scale rank and rating to each other if there is rating_field
-    # TODO This should be fully functional but is no tested yet so commented out
-    if($this->settings['rating_field'] && $row[$this->settings['rating_field']]){
-        
-        foreach($rows as $row){
-            $row['score'] = $row['score'] / $max_score;
-            $row[$this->settings['rating_field']] = $row[$this->settings['rating_field']] / $max_rating;
-            $row['score'] = $row['score'] / $max_score + $row[$this->settings['rating_field']];
-            
-        }
+
+    # Scale rank and rating to each other (double waight is given to score as ranking) if there is rating_field
+    if($this->settings['rating_field']){
+      foreach($rows as $row){
+        $row['score'] = $row['score'] / $max_score;
+        $row[$this->settings['rating_field']] = $row[$this->settings['rating_field']] / $max_rating / 2;
+        $row['score'] = $row['score'] + $row[$this->settings['rating_field']];
+        $rows2[] = $row;
+      }
     }
-    */
-    echo testit('$rows',$rows);
-    return $rows;
+    return $rows2;
 }
 
 
@@ -186,34 +168,33 @@ function search_perform(){
     $keywords_rx = $this->search_rx_escape_terms($keywords_db);
 
     $parts = array();
-    
+
     # Greedy search (match any keywords)
     if($this->settings['greedy'] == true){
-        //$intermed = '(';
+        testit('greedy', $this->settings['greedy']);
         foreach($keywords_db as $keyword_db){
-        
             foreach($this->look_in as $look_in){
-                $parts[]="$look_in RLIKE '$keyword_db'";
-                
+              $parts[]="$look_in RLIKE '$keyword_db'";
             }
         }
         $parts = implode(' OR ', $parts);
     }else{
-    # Un greedy (match all keywords)
+        testit('un greedy', $this->settings['greedy']);
+        # Un greedy (match all keywords)
         $intermed = '(';
         foreach($keywords_db as $keyword_db){
-            
+
             foreach($this->look_in as $look_in){
                 $parts[]="$intermed $look_in RLIKE '$keyword_db'";
                 $intermed = ' OR';
             }
             $intermed = ') AND (';
-            
+
         }
         $parts = implode('', $parts).")";
     }
     if($this->required_conditions){
-        
+
         $rc = $this->required_conditions;
         testit('$rc at beginning of if($rc)',$rc);
         if(!$this->keywords){
@@ -222,7 +203,7 @@ function search_perform(){
             unset($and_parts);
 
             foreach($rc as $field => $value){
-                
+
 # If there are multipuls VALUES of a required_conditions loop it with an sql OR
                 if(is_array($value)){
                     //testit('the RC value is an array', $value);
@@ -236,7 +217,7 @@ function search_perform(){
                     $parts = "$field RLIKE '$value' $and_parts";
                     $and_parts = "AND ($parts)";
                 }
-            }           
+            }
         }else{
         # If there are keyword(s) AND required condition(s)
 
@@ -248,12 +229,12 @@ function search_perform(){
                         //$value = '[[:<:]]'.AddSlashes($this->search_escape_rlike($value)).'[[:>:]]';
                         $rc_or = "$field RLIKE '$value' AND ($parts) $or $rc_or";
                         $or = "OR";
-                        
+
                         }
                         $parts = $rc_or;
-                        
+
                 }else{
-                
+
                     if($value != ""){
                         //testit(' $rc[$value] in if($this->keywords){}',$value);
                         $value = '[[:<:]]'.AddSlashes($this->search_escape_rlike($value)).'[[:>:]]';
@@ -266,27 +247,20 @@ function search_perform(){
 
     //$sql = "SELECT ".join(',',$this->look_in)." FROM ".$this->table." WHERE $parts";
     $sql = "SELECT * FROM ".$this->table." WHERE $parts";
-    //echo testit("search sql",$sql);
-    
+
     global $DB;
     $result = $DB->select("sql:$sql");
-    //echo testit('result',$result);
-    
-
-    /*
-    $result = mysql_query($sql);
-    if (!$result) {die('Invalid query: ' . mysql_error());} 
-    while($row = mysql_fetch_array($result, MYSQL_ASSOC)){
-    */
 
     $rows = $this->rank_results($result);
-    
+
     # if there is a custom sort by colum set, sort by that.
-    if($this->sortby){
-        $rows = $this->perform_sortby($rows,$this->sortby,$this->sort_order);
-    }else{
-        # else sort by $row[score] value
-        uasort($rows, array($this, "search_sort_results"));
+    if(count($rows)){
+        if($this->sortby){
+            $rows = $this->perform_sortby($rows,$this->sortby,$this->sort_order);
+        }else{
+            # else: sort by $row[score] value
+            uasort($rows, array($this, "search_sort_results"));
+        }
     }
     $this->results = $rows;
     $this->results_count = count($this->results);
@@ -301,27 +275,26 @@ function search_rx_escape_terms($keywords_db){
         $out[] = '\b'.preg_quote($keyword, '/').'\b';
     }
     return $out;
-
 }
 
 # compare the $row[score] of $a and $b and output a sort order suggestion for uasort()
-function search_sort_results($a, $b){       
-    $ax = $a[score];
-    $bx = $b[score];
+function search_sort_results($a, $b){
+    $ax = $a['score'];
+    $bx = $b['score'];
 
-    if ($ax == $bx){ 
-        return 0; 
+    if ($ax == $bx){
+        return 0;
     }
-    if($ax > $bx){ 
-        return-1; 
-    }else{ 
-        return 1; 
+    if($ax > $bx){
+        return-1;
+    }else{
+        return 1;
     }
 }
 
 function perform_sortby($array, $on, $order=SORT_ASC){
     // testit("about to perform_sortby with colum =$on  and order = $order",$array);
-    
+
     $new_array = array();
     $sortable_array = array();
 
@@ -337,7 +310,7 @@ function perform_sortby($array, $on, $order=SORT_ASC){
                 $sortable_array[$k] = $v;
             }
         }
-        
+
         switch ($order) {
             case SORT_ASC:
                 asort($sortable_array);
@@ -370,7 +343,7 @@ function set_sortby($sortby, $sort_order=SORT_ASC){
 
 function search_html_escape_terms(){
     $out = array();
-    
+
     foreach($this->keywords_array as $keyword){
         $keyword = str_replace('%', '*', $keyword);
         if (preg_match("/\s|,/", $keyword)){
@@ -380,7 +353,7 @@ function search_html_escape_terms(){
         }
     }
     return $out;
-    
+
 }
 
 function search_pretty_terms($keywords_html){
@@ -392,14 +365,22 @@ function search_pretty_terms($keywords_html){
 }
 
 function show_search_result_block($row){
-    # by extending the search class in the instantiating file this method (used in get_results_html) could be over written to customize how results are displayed 
+    # by extending the search class in the instantiating file this method (used in get_results_html) could be over written to customize how results are displayed
+
+    foreach($this->keywords_array as $keyword){
+      $regex_keywords[] = "/\b(".$keyword.")\b/i";
+    }
+
+    $row['title'] = preg_replace($regex_keywords, "<strong>$1</strong>", $row['title']);
+    $row['description'] = preg_replace($regex_keywords, "<strong>$1</strong>", $row['description']);
+
     $img = "";
     if(file_exists($row['image'])){
         if(exif_imagetype($row['image'])){
-            $img = "<a href=\"$row[url]\"><img src=\"$row[image]\"></a>";
+            $img = "<a href=\"$row[url]\"><img src=\"img/100/$row[image]\"></a>";
         }
     }
-        
+
     $block = "
     <div class=\"search_result\">
         $img
@@ -412,52 +393,53 @@ function show_search_result_block($row){
     </div>";
 
     return $block;
-  
+
 }
 
 function get_results_html(){
-    $this->search_perform($this->keywords);
-    
-    # search_pretty_terms() formats the keywords as "first, second and third" for search term "first second third" it has issues however
-    //$keyword_list = $this->search_pretty_terms($this->search_html_escape_terms($this->search_split_terms($this->keywords)));
-    
-    $keyword_list =  htmlentities($this->keywords);
-    if($keyword_list){ $for_keywords="for <b>$keyword_list</b> ";}
-    
-    if(count($this->results)){
-        $paginate = new paginate($this->results,20);
-        $results_paged = $paginate->page_data();
-        
-        if(count($keywords_html) == 1){
-            $items = 'item';
-        }else{
-            $items = 'items';
-        }
-        $this->results_message = count($this->results) . " $items $for_keywords(".$paginate->x_of_x_pages().") " .$paginate->paging_links();
-    
-        foreach($results_paged as $key => $value){
-            
-            
-            $results_html .= $this->show_search_result_block($value);
-        }
+  $this->search_perform($this->keywords);
 
-        $results_html .="
-            <div align=\"center\">
-                <br /><br />
-                ".$paginate->x_of_x_pages()."<br />
-                ".$paginate->paging_links()."
-            </div>";
+  # search_pretty_terms() formats the keywords as "first, second and third" for search term "first second third" it has issues however
+  //$keyword_list = $this->search_pretty_terms($this->search_html_escape_terms($this->search_split_terms($this->keywords)));
+
+  $keyword_list =  htmlentities($this->keywords);
+  if($keyword_list){ $for_keywords="for <b>$keyword_list</b> ";}
+
+  if(count($this->results)){
+    $paginate = new paginate($this->results,20);
+    $results_paged = $paginate->page_data();
+
+    if(count($keywords_html) == 1){
+      $items = 'item';
     }else{
-        $this->results_message = "Zero results $for_keywords";
+      $items = 'items';
     }
-return $results_html;
+    $this->results_message = count($this->results) . " $items $for_keywords(".$paginate->x_of_x_pages().") " .$paginate->paging_links();
+
+    if(is_array($results_paged)){
+      foreach($results_paged as $key => $value){
+
+        $results_html .= $this->show_search_result_block($value);
+      }
+    }
+
+    $results_html .="
+    <div align=\"center\">
+    <br /><br />
+    ".$paginate->x_of_x_pages()."<br />
+    ".$paginate->paging_links()."
+    </div>";
+  }else{
+    $this->results_message = "Zero results $for_keywords";
+  }
+  return $results_html;
 
 }
 function get_results_message(){
     return $this->results_message;
 }
 function get_results_count(){
-    //echo testit('$this->results_count',$this->results_count);
+    // testit('$this->results_count',$this->results_count);
     return $this->results_count;
 }
 function get_results_ids(){
