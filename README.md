@@ -1,8 +1,8 @@
 # PHP + MySql website site search class
 
-A php class to search in a MySql table of pages, images, or other site content and return matching results sorted by relevance and by rating.
+A simple configurable site search class. Sarch a MySql table of pages, images, or other site content and return matching results sorted by relevance, rating and or other criteria.
 
-Supports google style quoted phrase matching and wild-card characters as well as stripping common filler words and optional custom sorting and/or required conditions.
+Supports quoted phrase matching and wild-card search characters as well as stripping common filler words and optional custom sorting and/or required conditions.
 
 Uses a customizable version of the short stopwords list from http://www.ranks.nl/stopwords
 
