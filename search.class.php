@@ -1,9 +1,12 @@
 <?php
 /*
-# Things That need to be customized
-    $this->look_in
-    $this->table
-    $this->rank_by (the db fields for ranking results)
+
+# Things That needs to be customized
+$search_settings['table'] = $table;      // The SQL table to search
+$search_settings['look_in'] = $look_in;  // Array of DB field names to look in
+$search_settings['rank_by'] = $rank_by;  // Array of DB filed names, in which matches should effect the rank of result relevence
+$search_settings['id_field'] = 'id';     // Set to the uneque id field of table
+const SEARCH_SETTINGS = $search_settings
 */
 class search{
     var $keywords_array;
@@ -14,12 +17,13 @@ class search{
     var $keyword_list;
     var $required_conditions;
     var $results_count;
-    var $look_in;
+    //var $look_in;
     var $return_columns;
     var $sortby;
     var $sort_order;
-    var $rank_by;
+    //var $rank_by;
     var $settings;
+    public static $search_settings;
 /* READ ME
 
 What the Heck is going on??
@@ -36,20 +40,42 @@ search_rx_escape_terms(){
         $out[] = '\b'.preg_quote($keyword, '/').'\b';
     }
 
+TODO it's crumby to have to pass all the $table, $look_in, and $rank_by with every instantiation
+  These
+    A) Should be in the setting array
+    B) Should be able to be set once for a site (a constant in init.php or so) and used automatically every time
+
+  Update
+
 */
 
-function __construct($keywords, $table, $look_in, $rank_by){
-    $this->keywords = trim($keywords);
-    $this->keywords_array = $keywords;
-    $this->table = $table;      // The SQL table to search in
-    $this->look_in = $look_in;  //an array of database field names
-    $this->rank_by = $rank_by;
-    $this->settings['greedy'] = true; // Set to false to only show results that match all keywords
-    $this->settings['id_field'] = 'id'; // Set to the uneque id field of table
-    $this->settings['common_words'] = array('a','an','are','as','at','be','by','com','for','from','how','in','is','it','of','on','or','that','the','this','to','was','what','when','who','with','the');
+  function __construct($keywords, $table = NULL, $look_in = NULL, $rank_by = NULL){
+
+    // Set to the uneque id field of table
+    $this->settings['id_field'] = NULL;
+
+    // Field with rating
     $this->settings['rating_field'] = NULL;
 
-   }
+    // Set to false to only show results that match all keywords
+    $this->settings['greedy']  = TRUE;
+    $this->settings['common_words'] = array();
+
+    if($this::$search_settings){
+      $this->settings = array_merge($this->settings, $this::$search_settings);
+    }
+    // This add the following words to whatever was set in $search_settings as site specific stop words.
+    $this->settings['common_words'] = array_merge($this->settings['common_words'], array('a','an','are','as','at','be','by','com','for','from','how','in','is','it','of','on','or','that','the','this','to','was','what','when','who','with','the'));
+
+    $this->keywords = trim($keywords);
+    $this->keywords_array = $keywords;
+
+    if($table){$this->settings['table'] = $table; }      // The SQL table to search
+    if($look_in){$this->settings['look_in'] = $look_in;}   // Array of DB field names to look in
+
+    if($rank_by){$this->settings['rank_by'] = $rank_by;}   // Array of DB filed names, in which matches should effect the rank of result relevence
+    testit('Search settings',$this->settings);
+  }
 
 function search_split_terms(){
 
@@ -112,6 +138,7 @@ function set_required_conditions($field, $value){
 function rank_results($results){
 
     if(count($this->keywords_array) >  1){
+      // This prepends the search phrase back on to the front of the array of keywords to giv extra rank to phrase match results
         array_unshift($this->keywords_array, $this->keywords);
     }
 
@@ -123,7 +150,7 @@ function rank_results($results){
         $row['score_var'] = '';
 
         # this is the contence of $ranks_by fields put together to be sent to the scorring machine
-        foreach($this->rank_by as $field){
+        foreach($this->settings['rank_by'] as $field){
             $row['score_var'] .= "$row[$field] ";
         }
 
@@ -142,16 +169,22 @@ function rank_results($results){
             }
         }
 
-        //testit('$keyword',$keyword);
+        // testit('$keyword',$keyword);
         // testit('$row',$row);
         $rows[] = $row;
     }
 
+    $rows2 = array();
     # Scale rank and rating to each other (double waight is given to score as ranking) if there is rating_field
-    if($this->settings['rating_field']){
+    if($this->settings['rating_field'] && count($rows)){
+
       foreach($rows as $row){
+        //testit($this->settings['rating_field'],$row[$this->settings['rating_field']]);
         $row['score'] = $row['score'] / $max_score;
-        $row[$this->settings['rating_field']] = $row[$this->settings['rating_field']] / $max_rating / 2;
+        if($row[$this->settings['rating_field']] > 0){
+          // prevent division by zero errors for items rated 0
+          $row[$this->settings['rating_field']] = $row[$this->settings['rating_field']] / $max_rating / 2;
+        }
         $row['score'] = $row['score'] + $row[$this->settings['rating_field']];
         $rows2[] = $row;
       }
@@ -170,26 +203,25 @@ function search_perform(){
     $parts = array();
 
     # Greedy search (match any keywords)
-    if($this->settings['greedy'] == true){
-        testit('greedy', $this->settings['greedy']);
+    if($this->settings['greedy']){
+        //testit('greedy', $this->settings['greedy']);
         foreach($keywords_db as $keyword_db){
-            foreach($this->look_in as $look_in){
+            foreach($this->settings['look_in'] as $look_in){
               $parts[]="$look_in RLIKE '$keyword_db'";
             }
         }
         $parts = implode(' OR ', $parts);
     }else{
-        testit('un greedy', $this->settings['greedy']);
+        //testit('un greedy', $this->settings['greedy']);
         # Un greedy (match all keywords)
         $intermed = '(';
         foreach($keywords_db as $keyword_db){
 
-            foreach($this->look_in as $look_in){
+            foreach($this->settings['look_in'] as $look_in){
                 $parts[]="$intermed $look_in RLIKE '$keyword_db'";
                 $intermed = ' OR';
             }
             $intermed = ') AND (';
-
         }
         $parts = implode('', $parts).")";
     }
@@ -244,24 +276,24 @@ function search_perform(){
             }
         }
     }
-
-    //$sql = "SELECT ".join(',',$this->look_in)." FROM ".$this->table." WHERE $parts";
-    $sql = "SELECT * FROM ".$this->table." WHERE $parts";
+    //if($this->settings['rating_field']){ $rating_field_sql = ", rating_field"; }
+    //$sql = "SELECT ".join(',',$this->settings['look_in'])."$rating_field_sql FROM ".$this->settings['table']." WHERE $parts";
+    $sql = "SELECT * FROM ".$this->settings['table']." WHERE $parts";
 
     global $DB;
     $result = $DB->select("sql:$sql");
 
     $rows = $this->rank_results($result);
-
     # if there is a custom sort by colum set, sort by that.
     if(count($rows)){
-        if($this->sortby){
-            $rows = $this->perform_sortby($rows,$this->sortby,$this->sort_order);
-        }else{
-            # else: sort by $row[score] value
-            uasort($rows, array($this, "search_sort_results"));
-        }
+      if($this->sortby){
+        $rows = $this->perform_sortby($rows,$this->sortby,$this->sort_order);
+      }else{
+        # else: sort by $row[score] value
+        uasort($rows, array($this, "search_sort_results"));
+      }
     }
+
     $this->results = $rows;
     $this->results_count = count($this->results);
     return $rows;
@@ -443,12 +475,16 @@ function get_results_count(){
     return $this->results_count;
 }
 function get_results_ids(){
+  if($this->settings['id_field']){
     $this->search_perform($this->keywords);
     foreach($this->results as $key => $value){
-        # I didn't actually test this after editing :)
+        #TODO I didn't actually test this after editing :)
         $ids[]=$value[$this->settings['id_field']];
     }
     return $ids;
+  }else{
+    echo testit('ERROR $this->settings[id_field] no defined in search settings');
+  }
 }
 }
 ?>
