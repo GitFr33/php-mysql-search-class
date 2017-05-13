@@ -2,11 +2,19 @@
 /*
 
 # Things That needs to be customized
-$search_settings['table'] = $table;      // The SQL table to search
-$search_settings['look_in'] = $look_in;  // Array of DB field names to look in
-$search_settings['rank_by'] = $rank_by;  // Array of DB filed names, in which matches should effect the rank of result relevence
-$search_settings['id_field'] = 'id';     // Set to the uneque id field of table
-const SEARCH_SETTINGS = $search_settings
+// The SQL table to search
+search::$search_settings['table'] = 'your_table_name';
+// Array of DB field names to look in
+search::$search_settings['look_in'] = array('title','description','keywords');
+// Array of DB filed names, in which matches should effect the rank of result relevence
+search::$search_settings['rank_by'] = array('title','description','keywords');
+// Set to the uneque id field of table
+search::$search_settings['id_field'] = 'page_id';
+// Field with rating
+search::$search_settings['rating_field'] = 'user_rat';
+//custom stop words
+search::$search_settings['common_words'] = array('image','photo','picture');
+
 */
 class search{
     var $keywords_array;
@@ -159,7 +167,6 @@ function rank_results($results){
             $row['score'] += preg_match_all("~$keyword~i", $row['score_var'], $null);
         }
 
-
         if($this->settings['rating_field']){
             if($row['score'] > $max_score){
                 $max_score = $row['score'];
@@ -168,28 +175,28 @@ function rank_results($results){
                 $max_rating = $row[$this->settings['rating_field']];
             }
         }
-
-        // testit('$keyword',$keyword);
-        // testit('$row',$row);
         $rows[] = $row;
     }
 
-    $rows2 = array();
-    # Scale rank and rating to each other (double waight is given to score as ranking) if there is rating_field
+
+    # Scale rank and rating to each other (double waight is given to score as to ranking) if there is rating_field
+    $rating_adjusted_rows = array();
     if($this->settings['rating_field'] && count($rows)){
 
       foreach($rows as $row){
-        //testit($this->settings['rating_field'],$row[$this->settings['rating_field']]);
-        $row['score'] = $row['score'] / $max_score;
+        // All these if's are to prevent (dumb) division by zero errors
+        // testit($this->settings['rating_field'],$row[$this->settings['rating_field']]);
+        if($max_score > 0 && $row['score'] > 0){
+          $row['score'] = $row['score'] / $max_score;
+        }
         if($row[$this->settings['rating_field']] > 0){
-          // prevent division by zero errors for items rated 0
           $row[$this->settings['rating_field']] = $row[$this->settings['rating_field']] / $max_rating / 2;
         }
         $row['score'] = $row['score'] + $row[$this->settings['rating_field']];
-        $rows2[] = $row;
+        $rating_adjusted_rows[] = $row;
       }
     }
-    return $rows2;
+    return $rating_adjusted_rows;
 }
 
 
