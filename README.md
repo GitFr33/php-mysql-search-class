@@ -39,8 +39,3 @@ This class currently depends on the photosynthesis https://github.com/Photosynth
 
 ## To Do
 Figgure out a good lightweight method to match plural and singular versions of words.
-
-
-## Implementations in the Wild
-http://www.islandlight.ca
-https://www.sunship.com
